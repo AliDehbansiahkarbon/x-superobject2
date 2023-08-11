@@ -747,7 +747,13 @@ begin
           Result := JSonValue as C
   else
   if Self.InheritsFrom(TSuperArray) then
-    Result := TJSONArray(FInterface).Get(PInteger(@Name)^) as C
+  begin
+    try
+      Result := TJSONArray(FInterface).Get(PInteger(@Name)^) as C
+    except
+      Result := Nil;
+    end;
+  end
   else
     Result := Nil;
 end;
