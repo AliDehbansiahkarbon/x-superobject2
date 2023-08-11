@@ -33,7 +33,7 @@ interface
 uses
   SysUtils, Classes, Generics.Collections, Generics.Defaults, Math, DateUtils, RegularExpressions, RTTI;
 
-
+{$REGION 'consts'}
 const
   CNull = 'null';
   MaxCHR = #127;
@@ -42,12 +42,11 @@ const
   Err_Expected = 'Expected %s';
   Err_ExpectedButFound = '"%s" expected but "%s" found';
   Err_UnexpectedTokenILLEGAL = 'Unexpected token ILLEGAL';
+{$ENDREGION}
 
 type
 
-  // ## Forward Declarations
-  // -----------------------
-
+{$REGION 'Forward Declarations'}
   TJSONNull = class;
   TLexGenerator = class;
   TRoute = class;
@@ -59,15 +58,17 @@ type
 
   TDataType = (dtNil, dtNull, dtObject, dtArray, dtString, dtInteger, dtFloat, dtBoolean, dtDateTime, dtDate, dtTime);
   TJSONComparison<T> = reference to function(Left, Right: T): Integer;
-  // ## Exception
+{$ENDREGION}
 
+{$REGION 'Exceptions'}
   TJSONSyntaxError = class(Exception)
   public
     constructor Create(const Msg: String; Pos: PPosition);
     constructor CreateFmt(const Msg: String; const Args: array of TVarRec; Pos: PPosition);
   end;
+{$ENDREGION}
 
-  // ## JSONWriter
+{$REGION 'JSONWriter'}
   TJSONWriter = class
   public const
     IDENT_SIZE = 2;
@@ -91,11 +92,9 @@ type
     property Ident: Boolean read FIdent;
     property UniversalTime: Boolean read FUniversalTime;
   end;
+{$ENDREGION}
 
-
-  // ## JSON Symbols
-  // ---------------
-
+{$REGION 'JSON Symbols'}
   IJSONAncestor = interface
   ['{FFB71762-50A1-4D27-9F59-56F6208421C7}']
     function GetAsVariant: Variant;
@@ -223,7 +222,6 @@ type
     property Value;
   end;
 
-
   TJSONDateTimeCheckCallBack = reference to function(Str: String; var Value: TDateTime; var Typ: TDataType): Boolean;
   TJSONDateManager = class
   private
@@ -282,7 +280,6 @@ type
     function GetEnumerator: TJSONEnumerator<IJSONPair>;
     procedure Sort(Comparison: TJSONComparison<IJSONPair>);
   end;
-
 
   TJSONObject = class(TJSONValue<IJSONPair>, IJSONObject)
   private
@@ -343,7 +340,6 @@ type
     property Index[const Int: Integer]: IJSONAncestor read Get write SetIndex; default;
   end;
 
-
   TJSONBuilder = class
   private
     LGen: TLexGenerator;
@@ -379,11 +375,9 @@ type
     destructor Destroy; override;
     function ReadExpression: IJSONAncestor;
   end;
+{$ENDREGION}
 
-
-  // ## Parse
-  // --------
-
+{$REGION 'Parser'}
   TLexemType = ( ltNil,
                  ltSValue, ltIValue, ltDValue, ltNull, ltCLeft, ltCRight,
                  ltBLeft, ltBRight, ltBSlash, ltColon, ltDot, ltVirgule,
@@ -443,7 +437,6 @@ type
     constructor Create(const Message: String);
     property Message: String read GetMeessage write SetMessage;
   end;
-
 
   TNoRouteTrigger = class(TTrigger)
   end;
@@ -570,14 +563,18 @@ type
     property ValueType: TDataType read FValueType;
     property Success: Boolean read FSuccess;
   end;
+{$ENDREGION}
 
+{$REGION 'Miscellaneous'}
   function LimitedStrToUTF16(const Str: String): String;
+{$ENDREGION}
 
 implementation
 
 uses
   XSuperObject;
 
+{$REGION 'Public consts and vaiables'}
 const
   FloatFormat : TFormatSettings = ( DecimalSeparator : '.' );
   STokenTypes : array [TLexemType] of string = ('Nil',
@@ -602,90 +599,92 @@ const
   HexMap : array [0..15] of WideChar = ('0', '1', '2', '3', '4', '5', '6',
            '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f');
 
+var JSONLexGrammar: TJSONGrammar;
+{$ENDREGION}
+
+{$REGION 'Public Functions'}
+function iff(const Bool: Boolean; _true, _false: Variant): Variant; inline;
+begin
+  if Bool then
+     Result := _true
+  else
+     Result := _false;
+end;
+
+function ChrToUTF16(const ChrCode: Integer): String; inline;
+begin
+   Result := '\u' +
+             HexMap[ChrCode shr 12] +
+             HexMap[(ChrCode shr 8) and 15] +
+             HexMap[(ChrCode shr 4) and 15] +
+             HexMap[ChrCode and 15];
+end;
+
+function StrToUTF16(const Str: String): String;
 var
-  JSONLexGrammar: TJSONGrammar;
-  function iff(const Bool: Boolean; _true, _false: Variant): Variant; inline;
+  Tmp: PWideChar;
+begin
+  if Str = #0 then Exit(ChrToUtf16(0));
+  Result := '';
+  if Str = '' then
+     Exit
+  else
+     Tmp := PWideChar(Pointer(Str));
+  while Tmp^ <> #0 do
   begin
-    if Bool then
-       Result := _true
+    case Tmp^ of
+      #1..#31: case Tmp^ of
+                #8 : Result := Result + '\b';
+                #9 : Result := Result + '\t';
+                #10: Result := Result + '\n';
+                //#11: Result := Result + '\v';
+                #12: Result := Result + '\f';
+                #13: Result := Result + '\r';
+             else
+                Result := Result + ChrtoUTF16(Ord(Tmp^))
+             end;
+      #34{"}: Result := Result + '\"';
+      #92{\}: Result := Result + '\\';
+      //#127..#65535: Result := Result + ChrtoUTF16(Ord(Tmp^));
     else
-       Result := _false;
-  end;
-
-  function ChrToUTF16(const ChrCode: Integer): String; inline;
-  begin
-     Result := '\u' +
-               HexMap[ChrCode shr 12] +
-               HexMap[(ChrCode shr 8) and 15] +
-               HexMap[(ChrCode shr 4) and 15] +
-               HexMap[ChrCode and 15];
-  end;
-
-  function StrToUTF16(const Str: String): String;
-  var
-    Tmp: PWideChar;
-  begin
-    if Str = #0 then Exit(ChrToUtf16(0));
-    Result := '';
-    if Str = '' then
-       Exit
-    else
-       Tmp := PWideChar(Pointer(Str));
-    while Tmp^ <> #0 do
-    begin
-      case Tmp^ of
-        #1..#31: case Tmp^ of
-                  #8 : Result := Result + '\b';
-                  #9 : Result := Result + '\t';
-                  #10: Result := Result + '\n';
-                  //#11: Result := Result + '\v';
-                  #12: Result := Result + '\f';
-                  #13: Result := Result + '\r';
-               else
-                  Result := Result + ChrtoUTF16(Ord(Tmp^))
-               end;
-        #34{"}: Result := Result + '\"';
-        #92{\}: Result := Result + '\\';
-        //#127..#65535: Result := Result + ChrtoUTF16(Ord(Tmp^));
-      else
-        Result := Result + Tmp^;
-      end;
-      Inc(Tmp);
+      Result := Result + Tmp^;
     end;
+    Inc(Tmp);
   end;
+end;
 
-  function LimitedStrToUTF16(const Str: String): String;
-  var
-    Tmp: PWideChar;
+function LimitedStrToUTF16(const Str: String): String;
+var
+  Tmp: PWideChar;
+begin
+  if Str = #0 then Exit(ChrToUtf16(0));
+  Result := '';
+  if Str = '' then
+     Exit
+  else
+     Tmp := PWideChar(Pointer(Str));
+  while Tmp^ <> #0 do
   begin
-    if Str = #0 then Exit(ChrToUtf16(0));
-    Result := '';
-    if Str = '' then
-       Exit
+    case Tmp^ of
+      #1..#31: case Tmp^ of
+                #8 : Result := Result + '\b';
+                #9 : Result := Result + '\t';
+                #10: Result := Result + '\n';
+                //#11: Result := Result + '\v';
+                #12: Result := Result + '\f';
+                #13: Result := Result + '\r';
+             else
+                Result := Result + ChrtoUTF16(Ord(Tmp^))
+             end;
     else
-       Tmp := PWideChar(Pointer(Str));
-    while Tmp^ <> #0 do
-    begin
-      case Tmp^ of
-        #1..#31: case Tmp^ of
-                  #8 : Result := Result + '\b';
-                  #9 : Result := Result + '\t';
-                  #10: Result := Result + '\n';
-                  //#11: Result := Result + '\v';
-                  #12: Result := Result + '\f';
-                  #13: Result := Result + '\r';
-               else
-                  Result := Result + ChrtoUTF16(Ord(Tmp^))
-               end;
-      else
-        Result := Result + Tmp^;
-      end;
-      Inc(Tmp);
+      Result := Result + Tmp^;
     end;
+    Inc(Tmp);
   end;
+end;
+{$ENDREGION}
 
-{ TJSONAncestor }
-
+{$REGION 'TJSONAncestor'}
 procedure TJSONAncestor.AsJSONString(Str: TJSONWriter);
 begin
   Str.Append('');
@@ -722,9 +721,9 @@ begin
      Free;
   end;
 end;
+{$ENDREGION}
 
-{ TLexBuff }
-
+{$REGION 'TLexBuff'}
 procedure TLexBuff.Add(Ch: WideChar);
 begin
   if Capacity = 0 then Exit;
@@ -833,9 +832,9 @@ begin
    Capacity := Math.Max(Capacity * 2, Length + 8);
    ReallocMem(Buff, Capacity * SizeOf(WideChar));
 end;
+{$ENDREGION}
 
-{ TSuperParser }
-
+{$REGION 'TSuperParser'}
 class function TSuperParser.ParseJSON(const S: String; const CheckDateTime: Boolean): IJSONAncestor;
 var
   JSON: TJSONBuilder;
@@ -848,11 +847,9 @@ begin
        JSON.Free;
   end;
 end;
+{$ENDREGION}
 
-{ TTrigger }
-
-{ TTrigger }
-
+{$REGION 'TTrigger'}
 constructor TTrigger.Create(NextRoute: TRoute; TriggerProcs: TTriggerProcs;
   ParseProcs: TParseProc);
 begin
@@ -863,9 +860,9 @@ begin
   ED := ttEnd in TriggerProcs;
   BK := ttBack in TriggerProcs;
 end;
+{$ENDREGION}
 
-{ TRoute }
-
+{$REGION 'TRoute'}
 procedure TRoute.Add(const Chars: TRouteChars; Trigger: TTrigger);
 var
   Ch: WideChar;
@@ -937,9 +934,9 @@ begin
   else
      Result := False;
 end;
+{$ENDREGION}
 
-{ TLexGrammar }
-
+{$REGION 'TLexGrammar'}
 constructor TLexGrammar.Create;
 begin
   FRoutes := TList<TRoute>.Create;
@@ -966,9 +963,9 @@ begin
   Result := TRoute.Create(Name);
   FRoutes.Add(Result);
 end;
+{$ENDREGION}
 
-{ TJSONGrammar }
-
+{$REGION 'TJSONGrammar'}
 constructor TJSONGrammar.Create;
 begin
   inherited;
@@ -1073,9 +1070,9 @@ function TJSONGrammar.FirstRoute: TRoute;
 begin
   Result := rFirst;
 end;
+{$ENDREGION}
 
-{ TErrorTrigger }
-
+{$REGION 'TErrorTrigger'}
 constructor TErrorTrigger.Create(const Message: String);
 begin
   inherited Create(Nil, [], ppNil);
@@ -1091,9 +1088,9 @@ procedure TErrorTrigger.SetMessage(const Value: String);
 begin
   FMessage := Value;
 end;
+{$ENDREGION}
 
-{ TLexGenerator }
-
+{$REGION 'TLexGenerator'}
 function TLexGenerator.Check(LTyp: TLexemTypes): TLexemType;
 begin
   if not Assigned(FLexem) then
@@ -1366,8 +1363,9 @@ begin
 end;
 {$HINTS ON}
 
-{ TJSONBuilder }
+{$ENDREGION}
 
+{$REGION 'TJSONBuilder'}
 constructor TJSONBuilder.Create(const JSON: String; const CheckDates: Boolean);
 begin
   LGen := TLexGenerator.Create(JSONLexGrammar);
@@ -1487,9 +1485,9 @@ begin
     Result := Nil;
   end;
 end;
+{$ENDREGION}
 
-{ TJSONString }
-
+{$REGION 'JSON primitive Data types'}
 procedure TJSONString.AsJSONString(Str: TJSONWriter);
 begin
   if IsNull then
@@ -1498,8 +1496,7 @@ begin
      Str.AppendVal( '"' +  StrToUTF16(Value) + '"' );
 end;
 
-{ TJSONInteger }
-
+{TJSONInteger}
 procedure TJSONInteger.AsJSONString(Str: TJSONWriter);
 begin
   if FNull then
@@ -1508,9 +1505,7 @@ begin
      Str.AppendVal( Value );
 end;
 
-
 { TJSONFloat }
-
 procedure TJSONFloat.AsJSONString(Str: TJSONWriter);
 begin
   if FNull then
@@ -1518,8 +1513,6 @@ begin
   else
      Str.AppendVal( FloatToStr(Value, FloatFormat) );
 end;
-
-{ TJSONBoolean }
 
 procedure TJSONBoolean.AsJSONString(Str: TJSONWriter);
 begin
@@ -1537,9 +1530,9 @@ function TJSONNull.GetIsNull: Boolean;
 begin
   Result := True;
 end;
+{$ENDREGION}
 
-{ TJSONObject }
-
+{$REGION 'TJSONObject'}
 procedure TJSONObject.AddPair(P: IJSONPair);
 var
   N: IJSONPair;
@@ -1666,10 +1659,9 @@ begin
      R := Nil;
   end;
 end;
+{$ENDREGION}
 
-
-{ TJSONPair }
-
+{$REGION 'TJSONPair'}
 constructor TJSONPair.Create(const aName: String; aValue: IJSONAncestor);
 begin
   FName := aName;
@@ -1681,7 +1673,6 @@ begin
   FValue := Nil;
   inherited;
 end;
-
 
 function TJSONPair.GetName: String;
 begin
@@ -1702,9 +1693,9 @@ procedure TJSONPair.SetValue(const Value: IJSONAncestor);
 begin
   FValue := Value;
 end;
+{$ENDREGION}
 
-{ TJSONSyntaxError }
-
+{$REGION 'TJSONSyntaxError'}
 constructor TJSONSyntaxError.Create(const Msg: String; Pos: PPosition);
 begin
   inherited CreateFmt(Msg + '. (Line: %d Col: %d)', [Pos.Line, Pos.Col]);
@@ -1715,10 +1706,9 @@ constructor TJSONSyntaxError.CreateFmt(const Msg: String; const Args: array of T
 begin
   Create( Format(Msg, Args), Pos );
 end;
+{$ENDREGION}
 
-
-{ TJSONArray }
-
+{$REGION 'TJSONArray'}
 procedure TJSONArray.Add(Val: IJSONAncestor);
 begin
   FList.Add(Val);
@@ -1812,9 +1802,9 @@ begin
     TComparison<IJSONAncestor>(Comparison)
   ));
 end;
+{$ENDREGION}
 
-{ TJSONValue<T> }
-
+{$REGION 'TJSONValue<T>'}
 constructor TJSONValue<T>.Create(const Value: T);
 begin
   FData := Value;
@@ -1845,9 +1835,9 @@ procedure TJSONValue<T>.SetNull;
 begin
   FNull := True;
 end;
+{$ENDREGION}
 
-{ TJSONInterpreter }
-
+{$REGION 'TJSONInterpreter'}
 constructor TJSONInterpreter.Create(const Expression: String;
   JSON: IJSONAncestor; BlockException: Boolean = False);
 begin
@@ -2033,9 +2023,9 @@ begin
   end;
   LGen.KillLex;
 end;
+{$ENDREGION}
 
-{ TSuperEnumerator<T> }
-
+{$REGION 'TSuperEnumerator<T>'}
 function TJSONEnumerator<T>.GetCurrent: T;
 begin
   Result := List[Index]
@@ -2047,9 +2037,9 @@ begin
   if Result then
     Inc(Index);
 end;
+{$ENDREGION}
 
-{ TJSONWriter }
-
+{$REGION 'TJSONWriter'}
 function TJSONWriter.Append(const Value: string; const CRLF: Boolean = False): TJSONWriter;
 begin
   if FIdent then
@@ -2113,19 +2103,18 @@ function TJSONWriter.ToString: string;
 begin
   Result := FData.ToString;
 end;
+{$ENDREGION}
 
-{ TJSONDateTime }
-
+{$REGION 'TJSONDateTime'}
 constructor TJSONDateTime.Create(const Value: TDateTime; const Format: String);
 begin
   inherited Create(Value);
   FFormat := Format;
 end;
+{$ENDREGION}
 
-{ TJSONDateManager }
-
-class function TJSONDateManager.Check(const Data: String; var AValue: TDateTime;
-  var Typ: TDataType): Boolean;
+{$REGION 'TJSONDateManager'}
+class function TJSONDateManager.Check(const Data: String; var AValue: TDateTime; var Typ: TDataType): Boolean;
 var
   CallBck: TJSONDateTimeCheckCallBack;
 begin
@@ -2146,7 +2135,8 @@ var
   I: Integer;
 {$ENDIF}
 begin
-  if Assigned(FFormats) then begin
+  if Assigned(FFormats) then
+  begin
     {$IF CompilerVersion < 29}
     for I := 0 to FFormats.Count - 1 do
         FFormats.List[I]._Release;
@@ -2159,9 +2149,9 @@ class function TJSONDateManager.GetFormats: TList<TJSONDateTimeCheckCallBack>;
 begin
   Result := FFormats;
 end;
+{$ENDREGION}
 
-{ TISO8601 }
-
+{$REGION 'TISO8601'}
 constructor TISO8601.Create(const Value: String);
 var
   Matches: TMatchCollection;
@@ -2293,30 +2283,29 @@ begin
   FValue := TTimeZone.Local.ToLocalTime(FValue)
 end;
 
-
 procedure TISO8601.ReadZulu;
 begin
   FValue := TTimeZone.Local.ToLocalTime(FValue);
 end;
+{$ENDREGION}
 
-{ TJSONDate }
-
+{$REGION 'TJSONDate'}
 constructor TJSONDate.Create(const Value: TDate; const Format: String);
 begin
   inherited Create(Value);
   FFormat := Format;
 end;
+{$ENDREGION}
 
-{ TJSONTime }
-
+{$REGION 'TJSONTime'}
 constructor TJSONTime.Create(const Value: TTime; const Format: String);
 begin
   inherited Create(Value);
   FFormat := Format;
 end;
+{$ENDREGION}
 
-{ TJSONBaseDate<T> }
-
+{$REGION 'TJSONBaseDate<T>'}
 procedure TJSONBaseDate<T>.AsJSONString(Str: TJSONWriter);
 begin
   if FNull then
@@ -2334,13 +2323,14 @@ function TJSONBaseDate<T>.GetAsString: String;
 begin
    Result := FormatDateTime(FFormat, PDateTime(@FData)^);
 end;
+{$ENDREGION}
 
-{ TJSONRaw }
-
+{$REGION 'TJSONRaw'}
 procedure TJSONRaw.AsJSONString(Str: TJSONWriter);
 begin
   Str.AppendVal( Value );
 end;
+{$ENDREGION}
 
 initialization
 
